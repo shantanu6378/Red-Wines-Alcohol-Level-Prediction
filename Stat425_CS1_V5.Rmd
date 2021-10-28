@@ -1,0 +1,839 @@
+---
+title: "STAT 425 Case Study 1 - Analysis of Red Wines dataset"
+authors: "Debapratim Ghosh, Tanishq Khurana, Lavanya Upadhyaya, Shantanu Solanki"
+date: "10/20/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Problem Statment : Red Wines Data Analysis 
+
+In the homework, you have already studied a white wines data set. In this case study, we have a similar data set available. It is related to the red variant of the Portuguese ”Vinho Verde” wine.  
+
+
+
+<br>
+The variables we have available are the following:<br>
+
+X1: fixed acidity <br>
+
+X2: volatile acidity <br>
+
+X3: citric acid <br>
+
+X4: residual sugar <br>
+
+X5: chlorides <br>
+
+X6: free sulfur dioxide <br>
+
+X7: total sulfur dioxide  <br>
+
+X8: density <br>
+
+X9: pH <br>
+
+X10: sulphates <br>
+
+Y : alcohol <br>
+
+Our goal is to fit a model to describe the association between alcohol and physiochemical information (potential predictors X1-X10). The data can be found in the redwines.csv data set on Moodle.
+
+
+
+## Analysis Steps : 
+
+### Step 0 : Loading Required Libraries 
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(faraway)
+library(lmtest)
+library(MASS)
+
+library(car)
+```
+
+
+### Step 1 :  Reading the data
+Let us first read the data and go through the required columns :
+
+```{r}
+rw.data = read.csv("redwines.csv", header=TRUE)
+names(rw.data)
+```
+We observe that there is an extra variable `quality` which is not part of our problem statement. So, we will be dropping this variable before proceeding further in the analysis. 
+
+```{r}
+rw.new=rw.data[,!(names(rw.data)=='quality')]
+names(rw.new)
+dim(rw.new)
+```
+
+We will be working with rw.new from here on. 
+
+Let's look at the first few rows of the dataset and the summary of the dataset:
+
+```{r}
+head(rw.new)
+
+summary(rw.new)
+
+```
+
+Upon observation, all the variables in the dataset are numerical variables.
+
+
+### Step 2 :  Checking for linear correlation 
+
+Now, we will check how the predictors are linearly related to each other and how the predictors are linearly related to our response `alcohol`. 
+
+```{r}
+pairs(rw.new)
+cor(rw.new)
+```
+
+Most of these relationships are not either strongly positively or negatively correlated, but we observe a couple of clear relationships. Based on the pair wise scatter plot and the pair wise correlation matrix above, we can make the following observations : 
+
+The response `alcohol` has both positive linear relationship as well as negative linear relationship with the different predictors. Most of the relationships are not that strong; for example, the maximum absolute linear correlation of 'alcohol' is with `density`, which has a negative correlation coefficient of 0.49. 
+
+Among the predictors the following have a slight linear relationship with each other indicating the presence of some degree of multi-collinearity.
+
+1.fixed.acidity with citric.acid (correlation coefficient = 0.67)
+
+2.volatile.acidity with citric.acid (correlation coefficient = -0.55)
+
+3.fixed.acidity with density (correlation coefficient = 0.67)
+
+4.fixed.acidity with pH (correlation coefficient = -0.68)
+
+5.citric.acid with pH (correlation coefficient = -0.54)
+
+6. free.sulfur.dioxide with total.sulfur.dioxide (correlation coefficient = 0.67)
+
+## Step 3 : Fit the response with all available variables 
+
+Lets us fit the full model i.e. model with all the predictors and look at the significance of each predictor in explaining the variation in the response `alcohol`.
+
+```{r}
+full.model =  lm(alcohol ~ ., data=rw.new)
+summary(full.model)
+```
+
+From the model summary ,we can see that the $R^2$ is around ~67% which is considered to be decent.
+
+The overall p-value of F-test is smaller than our significance level of 5% which means that the model does have at least one predictor with a non-zero regression coefficient. 
+
+Also, there apart from `free.sulfur.dioxide`, all other predictors are statistically significant at a significance level of 5%. 
+
+## Step 4 : Checking for the presence of multicollinearity 
+
+Let's check the presence of multicollinearity before we decide to drop any non-significant variable from the dataset. 
+
+Firstly, let's check the condition number: 
+
+```{r}
+#Standardising the model matrix:
+x = model.matrix(full.model)[,-1]  
+x = x - matrix(apply(x,2, mean), 1599,10, byrow=TRUE)
+x = x / matrix(apply(x, 2, sd), 1599,10, byrow=TRUE)
+#Extracting the eigen-values:
+e = eigen(t(x) %*% x) 
+sqrt(max(e$val)/min(e$val))
+```
+
+The condition number is smaller than 30. So we conclude that collinearity is not present in the dataset. 
+
+To double check, we can also see the variance inflation factor (VIF) of the individual predictors to determine whether any one of them should be removed to reduce collinearity. 
+
+```{r}
+vif(full.model)
+```
+
+All the variables have VIF significantly less than 10 suggesting that collinearity is not present. 
+
+## Step 5 : Fit Reduced Model and Check Significance using ANOVA
+
+We can determine the difference between the full and reduced models using ANOVA. From the regression summary of the full model, we can see that `free.sulfur.dioxide` is not statistically significant. We can remove that predictor and fit a reduced model to our response `alcohol`. Further more  we can check if the reduced model is adequate in explaining the variation in response or not.   
+
+```{r}
+rw.reduced <-  lm(alcohol ~ fixed.acidity+volatile.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data=rw.new)
+summary(rw.reduced)
+```
+
+We can see that all the 9 predictors in the model are statistically significant ( i.e. the null hypothesis $H_0 : \beta_j =0$ can be rejected for any predictor $X_j$ where j=1,2,...9)
+
+Let's check if this model is better than the full model using the ANOVA test. 
+
+```{r}
+anova(rw.reduced,full.model)
+```
+
+Since the p value is > 0.05, we fail to reject the null hypothesis that the reduced model is adequate. (i.e $H_0$: Reduced Model is sufficient in explaining the variation in `alcohol`).
+
+Therefore, we can move forward with using the reduced model and checking the model diagnostics. 
+
+## Step 6 : Model Diagnostics 
+
+We will now check if our preferred model is "good" by testing its validity. 
+
+### 6.(a) Checking for Unusual Observations 
+
+Let's check for unusual observations in our model which might impact the regression structure in our model. High leverage points or outliers must be carefully considered since these points can have disproportionate effects on the overall pattern of the data. Therefore, if any of these are present, we may need to consider that in any final results or possibly remove data. 
+
+#### 6(a)(i) Checking for the presence of high leverage points 
+
+First, let us check for the presence of high leverage points in the dataset. 
+
+```{r}
+n=dim(rw.new)[1]; # sample size
+p=10; # 9 predictors plus intercept
+
+# Compute Leverages
+lev=influence(rw.reduced)$hat
+
+# Determine which exceed the 2p/n threshold
+newlev = lev[lev>2*p/n]
+length(newlev)
+length(newlev)/n
+
+# Prepare a half-normal plot 
+halfnorm(newlev, 6, labs=as.character(1:length(newlev)), ylab="Leverages")
+```
+
+We can see that there are 113 data points (or ~7% of the total observations) which can be considered as high leverage points.There are at least 4 points that have y-coordinates shifted from the line and therefore can be considered as bad high leverage points.
+
+#### 6(a)(ii) Checking for the presence of outliers
+
+We can now check for outliers in the dataset using Bonferroni's correction. 
+
+```{r}
+jackknife=rstudent(rw.reduced)
+n = 1599
+p = 9
+#Significance level adjusted with Bonferroni's Correction
+x=qt(.05/(2*n), n-p-1) 
+x
+sort(abs(jackknife),decreasing =T)[1:10]
+```
+
+We can see that there are no outliers in the dataset i.e there are no studentized residual values that are higher (in absolute value) of the critical T distribution value with Bonferroni's correction.
+
+
+#### 6(a)(iii) Checking for the presence of High Influential Points 
+
+To detect high influential points, let's check the cook's distance for our model:
+
+```{r}
+cook = cooks.distance(rw.reduced)
+# Extract max Cook's Distance
+max(cook)
+halfnorm(cook, 6, labs=as.character(1:length(cook)), ylab="Cook's distances")
+```
+
+From the outputs above, we can see that there no datapoints with a Cook's distance higher than 1. Therefore, by this rule of thumb, we can conclude that there are no high influential points. 
+Through all the work done in 6 (a), we can conclude that there are **no high influential points**; therefore, we do not need to remove any data points from our dataset or account for any data that may skew our results. 
+
+### 6.(b) Checking for Model Assumptions
+
+Now, we need to check if there are violations of basic assumptions of our model. The three that we will be focusing on are potential violations of the normality, constant variance, and linearity assumptions.  
+
+#### 6(b)(i) Checking the constant variance assumption (Homoscedasticity) 
+
+We can check whether the residuals have constant variance with respect to the fitted values in our model. We would use our reduced model and evaluate the constant variance assumption by viewing the behavior of the data around the zero line. 
+
+```{r}
+plot(rw.reduced, which=1)
+```
+
+From the residuals versus the fitted values plot, it is observed that there is significant deviation from the constant variance assumption. We can confirm this by performing the Breusch-Pagan test to check for heteroscedasticity. 
+
+```{r}
+bptest(rw.reduced)
+```
+
+Since the p-value is much less than our 5% significance level, we have to reject the null hypothesis that the errors have constant variance and conclude that the constant variance assumption of our model is violated. 
+
+#### 6(b)(ii) Checking the normality of errors assumption 
+
+In order to check if the errors in our model are normally distributed around a mean of zero, we need to look at the histogram of the residuals: 
+
+```{r}
+hist(rw.reduced$residuals, breaks = 20)
+```
+
+The histogram above suggests that the residuals are slightly skewed to the right, which means that we can predict that the mean is not equal to zero. 
+
+Let's look at the Q-Q plot to see whether we can observe a straight line. 
+
+```{r}
+plot(rw.reduced, which=2)
+```
+
+We can observe a significant deviation from the straight line for points with lower and higher theoretical quantiles. This again suggests that the residuals are not normally distributed. 
+
+To confirm this , we can perform the Kolmogorov-Smirnov test to test for normality:
+
+```{r ,warning=FALSE, message=FALSE}
+ks.test(residuals(rw.reduced), y=pnorm)
+```
+
+Since the p-value obtained from the KS test is much lower than our 5% significance level, we should reject the null hypothesis that the errors are normally distributed and conclude that the Normality assumption is violated. 
+
+Since the normality assumption is violated, our test for statistically significant predictors can't be based on t-tests and F-tests. In this case, we need to do the Permutation test on the full model with shuffling the values of the predictor we think is insignificant. Therefore, we need to do Permutation Test to ascertain that the `free.sulfur.dioxide` predictor that we removed from the model, is indeed not significant.
+
+Under the null hypothesis, we have $H_0$: $\beta_{free.sulfur.dioxide} = 0$; alternatively, $H_1$ = $\beta_{free.sulfur.dioxide}$ is *not* 0. 
+
+We then calculate the p-value using Monte-Carlo method with the decision rule that if the obtained p-value is less than $\alpha$ = 0.05, we can reject the null hypothesis:
+
+```{r}
+set.seed(1)
+n = dim(rw.new)[1]
+n.iter = 2000;
+fstats = numeric(n.iter)
+for (i in 1:n.iter){
+  rw.new1 = rw.new
+  rw.new1[, 6] = rw.new[sample(n), 6] #6th column pertaining to free.sulfur.dioxide
+  reg = lm(alcohol ~., data = rw.new1)
+  fstats[i] = summary(reg)$fstat[1]
+}
+p.value = length(fstats[fstats>summary(full.model)$fstat[1]])/n.iter
+p.value
+
+```
+
+Since the p-value is 0.31, we fail to reject the null hypothesis and conclude that the model without the `free.sulfur.dioxide` as one of the predictors, is an adequate one. 
+
+#### 6(b)(iii) Checking the linearity assumption 
+
+We can check linearity from the added variable plots of our model:
+
+```{r}
+
+avPlots(rw.reduced)
+```
+
+For all the predictors, the added variable plot suggests that the residuals are scattered around a straight line and therefore linearity condition is satisfied and we don't need to transform any predictor. 
+
+From the above outputs we can observe that our **Normality and Constant Variance assumptions are violated**. As a remedial measure, we can look into transforming our response and refitting the model. 
+
+## Step 7 : Box-Cox Transformation 
+
+To utilize Box-Cox transformation as a remedial measure , we need to find the value of $\hat\lambda$ which maximizes the likelihood of observing our dataset. But, first we need to check if their is any zero or negative value in our response, since the Box-Cox method does not work on such values.
+
+```{r}
+min(rw.new$alcohol)
+```
+
+Since the minimum value of our response is 8.4, we are good to go with the finding the $\hat\lambda$.
+
+```{r}
+model.transformation = boxcox(rw.reduced, lambda=seq(-2, 2, length=400))
+
+model.transformation$x[model.transformation$y==max(model.transformation$y)]
+
+tmp=model.transformation$x[model.transformation$y>max(model.transformation$y)-qchisq(0.95,1)/2]
+
+range(tmp)
+```
+
+As can be seen from the plot, the 95% Confidence Interval of $\hat\lambda$ does not contain 1. Thus, a transformation of the response is recommended. Let's check the for the optimum transformation.
+
+```{r}
+boxcox(rw.reduced,plotit=T,lambda=seq(-2,-1,by=0.025)) # zoom-in
+```
+
+Since $\lambda=-1.5$ is close to the  optimum value which maximizes the log-likelihood, we can use this $\lambda$ to transform the response and fit a new model using the transformed response and all the predictors.
+
+```{r}
+p=-1.5
+
+rw.new$alc_trans<-(rw.new$alcohol)**(p)
+
+rw.transformed<-lm(alc_trans~ fixed.acidity+free.sulfur.dioxide+volatile.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data=rw.new)
+
+summary(rw.transformed)
+
+```
+
+We can see that apart from the predictor `free.sulfur.dioxide`, all other predictors are statistically significant. We can also observe that the $R^2$ has reduced to 65% after the transformation. 
+
+Let's remove `free.sulfur.dioxide` from our model and perform an ANOVA test. 
+
+```{r}
+rw.trans.reduced<-lm(alc_trans~ fixed.acidity+volatile.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data=rw.new)
+summary(rw.trans.reduced)
+
+anova(rw.trans.reduced,rw.transformed)
+```
+
+The p-value of the anova test is greater than the significance level of 5% and therefore we fail to reject the null hypothesis that the reduced model is adequate in explaining the variation in the response. 
+
+In order to ascertain whether the significance of the predictor is found correctly, we can look at the normality assumption once again.
+
+```{r}
+#Kolmogorov-Smirnov Test on the residuals from the transformed model:
+ks.test(residuals(rw.transformed), y = pnorm)
+```
+
+Since the p-value is less than 0.05, we can reject the null hypothesis that the errors are normally distributed. Thus, the normality assumption is violated. We nee to do a permutation test to check for statistical significance of the predictor we found insignificant. Our null hypothesis is that the predictor `free.sulfur.dioxide` is not significant.
+
+```{r}
+n = dim(rw.new)[1]
+n.iter = 2000;
+fstats = numeric(n.iter)
+for (i in 1:n.iter){
+  rw.new2 = rw.new
+  rw.new2[, 6] = rw.new[sample(n), 6] #6th column pertaining to free.sulfur.dioxide
+  reg = lm(alc_trans ~fixed.acidity+free.sulfur.dioxide+volatile.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data = rw.new2)
+  fstats[i] = summary(reg)$fstat[1]
+}
+p.value = length(fstats[fstats>summary(rw.transformed)$fstat[1]])/n.iter
+p.value
+```
+
+As we can see the p-value is much larger than the significance level of 0.05. Thus, we can't reject the  null hypothesis that the predictor is insignificant. So, we go ahead with the reduced model.
+
+So we will be moving forward with the reduced model with the transformed response  (rw.trans.reduced)
+
+## Step 8 : Model Diagnostics of the transformed model 
+
+As with any new model we need to perform diagnostics to check for unusual observations and check if any assumptions are being violated. 
+
+### Step 8(a) : Checking for unusual observations 
+
+#### 8(a)(i) Checking for the presence of high leverage points
+
+Again, we can check our transformed model for high leverage points to ensure that no data point wll skew the results.
+
+```{r}
+n=dim(rw.new)[1]; # sample size
+p=10; # 9 predictors plus intercept
+
+
+
+# Compute Leverages
+lev=influence(rw.trans.reduced)$hat
+
+# Determine which exceed the 2p/n threshold
+newlev = lev[lev>2*p/n]
+length(newlev)
+length(newlev)/n
+
+# Prepare a half-normal plot 
+halfnorm(newlev, 6, labs=as.character(1:length(newlev)), ylab="Leverages")
+```
+
+As expected, the high leverage points do not change with our previous model as we are using the same set of predictors in this model as well. 
+
+#### 8(a)(ii) Checking for the presence of outliers 
+
+```{r}
+jackknife=rstudent(rw.trans.reduced)
+n = 1599
+p = 9
+x=qt(.05/(2*n), n-p-1)
+x
+sort(abs(jackknife),decreasing =T)[1:10]
+```
+
+From the above, we can see that there are no outliers as  there are no studentised residual values  that are higher (in absolute value) of the critical T distribution value with Bonferroni's correction.
+
+#### 8(a)(iii) Checking for the presence of High Influential Points
+
+```{r}
+cook = cooks.distance(rw.trans.reduced)
+# Extract max Cook's Distance
+max(cook)
+halfnorm(cook, 6, labs=as.character(1:length(cook)), ylab="Cook's distances")
+```
+
+Since all the Cook's distances are well less than 1, we can safely say that there are no high influential points in the dataset. 
+
+### 8.(b) Checking for Model Assumptions
+
+We also need to see if there are any of the assumptions of our model are being violated.
+
+#### 8(b)(i) Checking the constant variance assumption (Homoscedasticity) 
+
+Let's check if the residuals have constant variance with respect to the fitted values in our model:
+
+```{r}
+plot(rw.trans.reduced, which=1)
+```
+
+The residuals have lower variance for lower and higher fitted values while they have higher variances in the middle. This suggests that the error variance is not constant. We can confirm this from Breusch-pagan Test.
+
+```{r}
+bptest(rw.trans.reduced)
+```
+
+Since the p-value is much less than our 5% significance level, we have to reject the null hypothesis that the errors have constant variance and conclude that the constant variance assumption of our model is violated. 
+
+
+#### 8(b)(ii) Checking the normality of errors assumption 
+
+Let's check if the errors in our model are normally distributed around a mean of zero. In order to achieve this, we need to look at the histogram of the residuals:
+
+```{r}
+hist(rw.trans.reduced$residuals)
+```
+
+There is an improvement in the normality of the residuals i.e. the residuals are less right skewed than our untransformed model. However, the improvement is still not enough, since the normality assumption still fails the Kolmogorov-Smirnov test. We can confirm this from the Kolmogorov-Smirnov Test and the QQ Plot. 
+
+Let's look at the Q-Q plot to see whether we can observe a straight line. 
+
+```{r}
+plot(rw.trans.reduced, which=2)
+
+```
+
+We can observe a less deviation from the straight line for points with lower and higher theoretical quantiles as compared to the previous untransformed model. But, as seen above, the KS test still gives a p-value much lower than our 5% significance level, we have to reject the null hypothesis that the errors are normally distributed and conclude that the Normality assumption is violated . 
+
+#### 8(b)(iii) Checking the linearity assumption 
+
+We can check for linearity by looking at the output of our regression model itself.
+
+
+```{r}
+#library(cars)
+avPlots(rw.trans.reduced)
+```
+
+For all the predictors, the added variable plot suggests that the residuals are scattered around a straight line and therefore linearity condition is satisfied and we don't need to transform any predictor. 
+
+From the above outputs we can observe that our Normality and Constant Variance assumptions are still  violated even after transformation.
+
+
+As an alternative, we can look into weighted least squares method for fitting our  model. 
+
+## Step 9 : Weighted Least Squares method to fit the model 
+
+Since our residual variance is not constant, we can apply a weight to make it constant. Lets look at the relationship between the absolute residuals of our model and the predictors. 
+
+```{r}
+lm.resid<-lm(abs(rw.reduced$residuals)~fixed.acidity+volatile.acidity+citric.acid+residual.sugar+density+pH+sulphates,data=rw.new)
+
+summary(lm.resid)
+#summary(rw.reduced)
+```
+
+
+Since the p-value from the regression summary is <5%, we can say there is some degree of linear relationship between the absolute residuals and the predictors.
+
+The fitted values from the previous regression model will be used to calculate the weights in our WLS model. 
+
+$$w_i=\frac{1}{\hat s_i^2}$$
+```{r}
+rw.new$weight<-1/(lm.resid$fitted.values)^2
+
+rw.wls<-lm(alcohol~fixed.acidity+volatile.acidity+residual.sugar+citric.acid+chlorides+total.sulfur.dioxide+density+pH+sulphates,data=rw.new,weights=weight)
+
+summary(rw.wls)
+```
+
+The $R_2$ has improved to 71% in the WLS model. Let's check the variance covariance matrix of our previous model and new model to compare the coefficient variances. 
+
+```{r}
+vcov(rw.reduced)
+vcov(rw.wls)
+```
+
+Overall, the coefficient variances have reduced in the new model. So even if the model assumptions are being violated, our estimation of the regression coefficients will be more accurate using WLS. As seen from the summary output of the Weighted least Squares Model, the standard error for the the predictors is also reduced.
+
+
+## Step 10 : Model Assumption for WLS  model 
+
+Multiple iterations of the model will best inform us which model is "best." Hence, we're testing model diagnostics and assumptions once again with the WLS model, attempting to improve our model as much as possible.
+
+### Constant Variance 
+
+From the BP test, we can view whether the constant variance assumption is violated:
+
+```{r}
+bptest(rw.wls)
+```
+
+So the constant variance assumption is still violated.
+
+```{r}
+plot(rw.wls, which=1)
+```
+
+### Normality
+
+We can check the status of the Normality assumption using the KS test once again:
+
+```{r}
+ks.test(residuals(rw.wls),y=pnorm)
+```
+
+Due to the small p-value, the null hypothesis (that errors are normally distributed) can be rejected. Therefore, the normality assumption is also violated.
+
+### Linearity 
+
+We can check the linearity assumption after noticing that the constant variance & normality assumptions are violated.
+
+```{r}
+avPlots(rw.wls)
+```
+
+The predictors seem to have a linear relationship with the response as the added variable plots seem to be linear in nature and this suggests that there is no transformation needed for the predictors.
+
+In the steps to apply WLS estimates, we did not know the actual residual variances, which we estimated by fitting a linear regression model on absolute value of residuals versus the predictors, and extracting the fitted values. Since the constant variance assumption is still violated, we may iterate over the above steps, to get a closer estimate of the residual variances and then apply the obtained weights.  
+
+### Step 10(a)
+```{r}
+lm.resid2<-lm(abs(rw.wls$residuals)~fixed.acidity+residual.sugar+density+pH+sulphates,data=rw.new)
+
+summary(lm.resid2)
+#summary(rw.reduced)
+```
+We start by regressing the residuals on all the predictors and gradually remove the insignificant variables to get the above model. Since the p-value from the regression summary is <5%, we can say there is some degree of linear relationship between the absolute residuals of the WLS model and the predictors.
+
+We should set the weights of the residue from this model to get a closer estimate of the residual variances.
+```{r}
+rw.new$weight2<-1/(lm.resid2$fitted.values)^2
+
+rw.wls2<-lm(alcohol~fixed.acidity+volatile.acidity+residual.sugar+citric.acid+chlorides+total.sulfur.dioxide+density+pH+sulphates,data=rw.new,weights=weight2)
+
+summary(rw.wls2)
+```
+From the summary, we can see that the coefficient of distribution, $R^2$ has increased to 72%. Now, we plot the residuals vs fitted values to see if the plot improves in comparison to the previous WLS model.
+```{r}
+par(mfrow= c(1, 2))
+plot(rw.wls, which = 1, main = 'WLS 1') #WLS Model 1
+plot(rw.wls2, which = 1, main = 'WLS 2') #WLS Model 2
+
+```
+As we can see from the comparison above, the variance in the second WLS model is closer to being constant. 
+We, therefore, perform similar iterations until we reach the optimal point.
+
+```{r}
+lm.resid3<-lm(abs(rw.wls2$residuals)~fixed.acidity+residual.sugar+density+pH+sulphates,data=rw.new)
+
+summary(lm.resid3)
+
+```
+
+```{r}
+rw.new$weight3<-1/(lm.resid3$fitted.values)^2
+
+rw.wls3<-lm(alcohol~fixed.acidity+volatile.acidity+residual.sugar+citric.acid+chlorides+total.sulfur.dioxide+density+pH+sulphates,data=rw.new,weights=weight3)
+summary(rw.wls3)
+```
+Let's see the plot improvement:
+
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.wls2, which = 1, main = 'WLS 2') #WLS Model 2
+plot(rw.wls3, which = 1, main = 'WLS 3') #WLS Model 3
+```
+```{r}
+lm.resid4<-lm(abs(rw.wls3$residuals)~fixed.acidity+residual.sugar+density+pH+sulphates,data=rw.new)
+
+rw.new$weight4<-1/(lm.resid4$fitted.values)^2
+summary(lm.resid4)
+rw.wls4<-lm(alcohol~fixed.acidity+volatile.acidity+residual.sugar+citric.acid+chlorides+total.sulfur.dioxide+density+pH+sulphates,data=rw.new,weights=weight4)
+
+summary(rw.wls4)
+
+```
+The $R^2$ for the 4th WLS model is slightly higher than the previous model. However, we are more concerned about the variance of the residuals. Let's compare it with the previous model.
+### Homoscedasticity:
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.wls3, which = 1, main = 'WLS 3') #WLS Model 3
+plot(rw.wls4, which = 1, main = 'WLS 4') #WLS Model 4
+```
+
+As we can see that our curve is getting away from the zero line for higher fitted values. Although none of the models makes the variance become constant, the model WLS3 appears better than the other in terms of constant variance. Since there is no significant improvement after 3 iterations, we may stop here. Comparing it with the first WLS model, we can see an increase in the coefficient of distribution, $R^2$ and the reduction in the standard error of our estimates. However, as we have changed our model, let's check the other assumptions:
+
+
+### Normality:
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.wls3, which = 2)
+hist(residuals(rw.wls3), breaks = 40)
+
+```
+
+The histogram is better than that of the LS model, but is still right-skewed. The QQ plot also shows deviation from the straight line. We expect the  model to fail the Kolmogorov-Smirnov Test. Let's check that:
+```{r}
+ks.test(residuals(rw.wls3), y= pnorm)
+```
+As expected, the p-value is much less than 0.05 and therefore, we may reject the null hypothesis that the errors are normal. 
+
+### Linearity:
+
+```{r}
+avPlots(rw.wls3)
+```
+The added variables plot show linear trend with observations evenly scattered around the line. We may therefore, conclude that the response has a linear relationship with the predictors.
+
+## Step 11: Weighted Least Squares for transformed response.
+We can do a similar iterative WLS on the transformed model.
+
+The summary of regression of absolute residuals on all predictors shows some insignificant predictors like `free.sulfur.dioxide` and `volatile.acidity`. Gradually removing them and refitting the model, we get the following:
+```{r}
+lm.res = lm(abs(residuals(rw.trans.reduced)) ~ fixed.acidity+residual.sugar+density+pH, data = rw.new)
+summary(lm.res)
+```
+Now, we set the weights and fit a WLS model on all the predictors as follows:
+```{r}
+rw.new$trans_weight = 1/(lm.res$fitted.values)^2
+rw.tw.full = lm(alc_trans ~ fixed.acidity+volatile.acidity+free.sulfur.dioxide+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data = rw.new, weights = trans_weight)
+summary(rw.tw.full)
+```
+
+Upon checking for the statistical significance of the predictors, we find two predictors, `free.sulfur.dioxide` and `volatile.acidity` as insignificant. Since we have ruled out any collinearity in the model and the permutation tests give almost same results, we can drop these two variables and refit the model.
+```{r}
+rw.new$trans_weight = 1/(lm.res$fitted.values)^2
+rw.tw = lm(alc_trans ~ fixed.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data = rw.new, weights = trans_weight)
+summary(rw.tw)
+```
+As we can see the $R^2$ for the WLS model of transformed response has significantly increased to 75% from the model without the weights which was around 65%.
+Besides, as expected, the standard errors of the estimates have also decreased.
+We continue our iterations as follows:
+```{r}
+lm.res2 = lm(abs(residuals(rw.tw)) ~ fixed.acidity+residual.sugar+density+pH, data = rw.new)
+summary(lm.res2)
+```
+```{r}
+rw.new$trans_weight2 = 1/(lm.res2$fitted.values)^2
+rw.tw2 = lm(alc_trans ~ fixed.acidity+citric.acid+residual.sugar+chlorides+total.sulfur.dioxide+density+pH+sulphates, data = rw.new, weights = trans_weight2)
+summary(rw.tw2)
+```
+Comparing the models on the basis of normality and constant variance:
+Let's check the two models on the respective tests.
+```{r}
+bptest(rw.tw)
+bptest(rw.tw2)
+```
+The p-value in both the cases is much lower than 0.05 and hence, we conclude homoscedasticity is not present.
+
+```{r}
+ks.test(residuals(rw.tw), y=pnorm)
+ks.test(residuals(rw.tw2), y = pnorm)
+```
+Both the models fail on the Kolmogorov-Smirnov test for normality. 
+Let's have a look at the plots:
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.tw2, which = 2)
+plot(rw.tw, which = 2)
+```
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.tw2, which = 1)
+plot(rw.tw, which = 1)
+```
+There is not considerable change in the plot of residuals vs fitted values in the two models. However, the deviation from the straight line in the QQ plot of the residuals indicate that the first WLS model with transformed response, `rw.tw` is a better one. Also, since the plot showing the variance of residuals is not improving, we may stop our iterations.
+
+### Step 12: Final Model Selection
+Finally, we compare the two models, the former that we got by Weighted Least Squares method on untransformed response, and the latter that we got by WLS method on transformed response.
+```{r}
+summary(rw.wls3)
+summary(rw.tw)
+```
+
+We also do the diagnostics on the two models:
+
+#### Outliers:
+WLS 3 Model:
+```{r}
+jackknife1=rstudent(rw.wls3)
+n = 1599
+p = 9
+x=qt(.05/(2*n), n-p-1) #Significance level adjusted with Bonferroni's Correction
+x
+sort(abs(jackknife1),decreasing =T)[1:10]
+```
+Thus, we get one outlier, i.e. observation no. 1427.
+
+Transformed WLS:
+```{r}
+jackknife2=rstudent(rw.tw)
+n = 1599
+p = 9
+x=qt(.05/(2*n), n-p-1) #Significance level adjusted with Bonferroni's Correction
+x
+sort(abs(jackknife2),decreasing =T)[1:10]
+```
+There are no outliers in the Transformed WLS model.
+
+
+#### High Infuential Points (Cook's distance):
+```{r}
+par(mfrow = c(1, 2))
+cook1 = cooks.distance(rw.wls3)
+max(cook1)
+halfnorm(cook1, 6, labs=as.character(1:length(cook)), ylab="Cook's distances", main = "WLS 3 Model")
+cook2 = cooks.distance(rw.trans.reduced)
+
+max(cook2)
+halfnorm(cook2, 6, labs=as.character(1:length(cook)), ylab="Cook's distances", main = "Transformed WLS Model")
+```
+
+
+Thus, we can see none of the models has any High Influential points. Hence, we don't need to drop any observation.
+
+### Model Assumption Diagnostics:
+We perform the tests for our model assumptions as follows:
+
+#### Homoscedasticity:
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.wls3, which = 1, main = "WLS 3 Model")
+plot(rw.tw, which = 1, main = "Transformed WLS Model")
+```
+Both models show non-constant variance. But, the WLS 3 model is closer to being constant than the Transformed WLS model.
+Also, we test through the Breusch-Pagan test:
+```{r}
+bptest(rw.wls3)
+bptest(rw.tw)
+```
+
+Thus, both the models fail the test.
+
+#### Normality:
+```{r}
+par(mfrow = c(1, 2))
+plot(rw.wls3, which = 2)
+plot(rw.tw, which = 2)
+```
+ 
+```{r}
+par(mfrow = c(1, 2))
+hist(residuals(rw.wls3),breaks = 40, main = "WLS 3 Model")
+hist(residuals(rw.tw),breaks = 40, main = "Transformed WLS Model")
+```
+In this case, the second model, i.e. Transformed model shows better plots in terms of normality, with fewer points deviating from the straight line in the QQ plot and very less skew in the histogram.
+Also, we test through the Kolmogorov-Smirnov test:
+```{r}
+ks.test(residuals(rw.wls3), y=pnorm)
+ks.test(residuals(rw.tw), y=pnorm)
+```
+
+Both the models fail the KS test. However, the QQ plot of the residuals of the Transformed WLS model, `rw.tw` shows fewer points deviating from the straight line.
+
+#### Linearity:
+
+```{r}
+avPlots(rw.wls3)
+```
+
+```{r}
+avPlots(rw.tw)
+```
+
+Both models show that the relationship is, by and large, linear with the predictors. 
+
+Finally, we choose the Transformed WLS model for its performance in explaining the variation in response (greater value of $R^2$), while being a simpler model (less number of predictors) and getting residuals closer to normal distribution.
+
+#### Summary of the final model:
+```{r}
+summary(rw.tw)
+```
+
